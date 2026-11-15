@@ -1,3 +1,6 @@
+<!--
+Maintained and synced from 8fold/.github, do not update outside of the 8fold/.github repository
+-->
 
 # Contributor Covenant 3.0 Code of Conduct
 
