@@ -1,0 +1,72 @@
+name: Sync Labels & Core Docs
+
+on:
+  schedule:
+    - cron: '0 0 1 */3 *' # Quarterly sync
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync-labels-and-docs:
+    name: Sync Labels & Shared Docs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout .github Repository
+        uses: actions/checkout@v6.0.2
+
+      - name: Generate Cross-Repo App Token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Sync Labels & Docs Across Org Repos
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ORG_NAME: ${{ github.repository_owner }}
+        run: |
+          # Fetch all active (non-archived, non-disabled) repos
+          REPOS=$(gh api "orgs/$ORG_NAME/repos?per_page=100" --paginate --jq '.[] | select(.archived == false and .disabled == false) | .name')
+
+          FILES_TO_SYNC=("docs/issue-triage.md" "docs/versioning.md")
+
+          for repo in $REPOS; do
+            echo "=========================================="
+            echo "Processing repository: $repo"
+            echo "=========================================="
+
+            # 1. Sync Labels from 8fold/repo-skeleton (--force overwrites defaults/conflicts)
+            if gh label clone 8fold/repo-skeleton --repo "$ORG_NAME/$repo" --force > /dev/null 2>&1; then
+              echo "  ✓ Synced labels from 8fold/repo-skeleton to $ORG_NAME/$repo"
+            else
+              echo "  ::warning:: Failed to sync labels to $repo"
+            fi
+
+            # 2. Sync Shared Documentation Files
+            for file_path in "${FILES_TO_SYNC[@]}"; do
+              if [ -f "$file_path" ]; then
+                FILE_CONTENT=$(base64 -w 0 "$file_path")
+                # Check if file exists in target repo to get SHA
+                EXISTING_SHA=$(gh api "repos/$ORG_NAME/$repo/contents/$file_path" --jq '.sha' 2>/dev/null || true)
+
+                if [ -n "$EXISTING_SHA" ]; then
+                  PAYLOAD=$(jq -n --arg content "$FILE_CONTENT" --arg sha "$EXISTING_SHA" \
+                    '{message: "docs: sync shared documentation from .github", content: $content, sha: $sha}')
+                else
+                  PAYLOAD=$(jq -n --arg content "$FILE_CONTENT" \
+                    '{message: "docs: add shared documentation from .github", content: $content}')
+                fi
+
+                if gh api -X PUT "repos/$ORG_NAME/$repo/contents/$file_path" --input - <<< "$PAYLOAD" > /dev/null 2>&1; then
+                  echo "  ✓ Synced $file_path"
+                else
+                  echo "  ::warning:: Failed to sync $file_path to $repo"
+                fi
+              fi
+            done
+          done

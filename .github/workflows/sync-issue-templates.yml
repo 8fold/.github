@@ -1,0 +1,68 @@
+name: 2. Sync Issue Templates
+
+on:
+  schedule:
+    - cron: '0 0 1 */3 *' # Quarterly sync
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync-issue-templates:
+    name: Sync Common Issue Templates to Custom Repos
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout .github Repository
+        uses: actions/checkout@v6.0.2
+
+      - name: Generate Cross-Repo App Token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Distribute Issue Templates to Custom Repos
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          ORG_NAME: ${{ github.repository_owner }}
+        run: |
+          REPOS=$(gh api "orgs/$ORG_NAME/repos?per_page=100" --paginate --jq '.[] | select(.archived == false and .disabled == false) | .name')
+
+          for repo in $REPOS; do
+            # Skip source .github repo
+            [ "$repo" = ".github" ] && continue
+
+            # Check if target repo has a local ISSUE_TEMPLATE folder
+            if gh api "repos/$ORG_NAME/$repo/contents/.github/ISSUE_TEMPLATE" > /dev/null 2>&1; then
+              echo "Repository '$repo' has local issue templates. Distributing common templates..."
+
+              for template_path in .github/ISSUE_TEMPLATE/*; do
+                [ -f "$template_path" ] || continue
+                filename=$(basename "$template_path")
+                target_file_path=".github/ISSUE_TEMPLATE/$filename"
+
+                FILE_CONTENT=$(base64 -w 0 "$template_path")
+                EXISTING_SHA=$(gh api "repos/$ORG_NAME/$repo/contents/$target_file_path" --jq '.sha' 2>/dev/null || true)
+
+                if [ -n "$EXISTING_SHA" ]; then
+                  PAYLOAD=$(jq -n --arg content "$FILE_CONTENT" --arg sha "$EXISTING_SHA" \
+                    "{message: \"chore: update common issue template $filename\", content: \$content, sha: \$sha}")
+                else
+                  PAYLOAD=$(jq -n --arg content "$FILE_CONTENT" \
+                    "{message: \"chore: add common issue template $filename\", content: \$content}")
+                fi
+
+                if gh api -X PUT "repos/$ORG_NAME/$repo/contents/$target_file_path" --input - <<< "$PAYLOAD" > /dev/null 2>&1; then
+                  echo "  ✓ Synced $filename"
+                else
+                  echo "  ::warning:: Failed to sync $filename to $repo"
+                fi
+              done
+            else
+              echo "Repository '$repo' has no local ISSUE_TEMPLATE directory. Relying on native .github inheritance."
+            fi
+          done
