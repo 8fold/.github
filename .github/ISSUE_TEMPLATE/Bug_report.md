@@ -1,5 +1,5 @@
 ---
-name: Bug report
+name: Broken/Annoying
 about: Promised behavior does not match the observed experience
 ---
 
