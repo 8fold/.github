@@ -1,4 +1,4 @@
-name: 3. Security & Code Scanning Enforcer
+name: Security & Code Scanning Enforcer
 
 on:
   schedule:
