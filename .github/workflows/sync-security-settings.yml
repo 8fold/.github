@@ -1,20 +1,21 @@
-name: Security & Code Scanning Enforcer
+# Maintained in 8fold/.github; do not edit outside of 8fold/.github
+name: Sync Repository Security & Quality Settings
 
 on:
   schedule:
-    - cron: '0 0 1 */3 *' # Quarterly sync
-  workflow_dispatch:
+    - cron: '0 0 1 */3 *'    # Quarterly sync
+  workflow_dispatch:          # Manual trigger
 
 permissions:
   contents: read
 
 jobs:
-  sync-security-settings:
-    name: Enforce Security & Code Scanning across Org
+  sync-security:
+    name: Enforce Org-Wide Security & Quality Settings
     runs-on: ubuntu-latest
 
     steps:
-      - name: Generate Cross-Repo App Token
+      - name: Generate Cross-Repo GitHub App Access Token
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
@@ -22,7 +23,7 @@ jobs:
           private-key: ${{ secrets.SECURITY_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
-      - name: Enforce Security & Scanning Settings
+      - name: Configure Security & Quality Settings across Org
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           ORG_NAME: ${{ github.repository_owner }}
@@ -30,6 +31,7 @@ jobs:
           FAIL_COUNT=0
           FAILED_REPOS=()
 
+          # Fetch repository names and visibility (private vs public) for active repos
           REPOS_JSON=$(gh api "orgs/$ORG_NAME/repos?per_page=100" --paginate --jq '.[] | select(.archived == false and .disabled == false) | {name: .name, private: .private}')
 
           while read -r repo_info; do
@@ -38,60 +40,71 @@ jobs:
             repo=$(echo "$repo_info" | jq -r '.name')
             is_private=$(echo "$repo_info" | jq -r '.private')
 
+            echo ""
             echo "=========================================="
-            echo "Enforcing security for: $repo (Private: $is_private)"
+            echo "Configuring security settings for: $repo (Private: $is_private)"
             echo "=========================================="
             REPO_FAILED=0
 
-            # A. Private Vulnerability Reporting
-            if ! gh api "repos/$ORG_NAME/$repo/private-vulnerability-reporting" -X PUT > /dev/null 2>&1; then
-              echo "::warning::Failed to enable Private Vulnerability Reporting for $repo"
-              REPO_FAILED=1
-            else
-              echo "  ✓ Private Vulnerability Reporting enabled"
-            fi
-
-            # B. Dependabot Alerts
+            # --- 1. Enable Dependabot Alerts (Free on Public & Private) ---
             if ! gh api "repos/$ORG_NAME/$repo/vulnerability-alerts" -X PUT > /dev/null 2>&1; then
-              echo "::warning::Failed to enable Dependabot Alerts for $repo"
+              echo "  ::warning::Failed to enable Dependabot Alerts for $repo"
               REPO_FAILED=1
             else
-              echo "  ✓ Dependabot Alerts enabled"
+              echo "  ✓ Enabled Dependabot Alerts"
             fi
 
-            # C. Dependabot Security Updates
+            # --- 2. Enable Dependabot Security Updates (Free on Public & Private) ---
             if ! gh api "repos/$ORG_NAME/$repo/automated-security-fixes" -X PUT > /dev/null 2>&1; then
-              echo "::warning::Failed to enable Dependabot Security Updates for $repo"
+              echo "  ::warning::Failed to enable Dependabot Security Updates for $repo"
               REPO_FAILED=1
             else
-              echo "  ✓ Dependabot Security Updates enabled"
+              echo "  ✓ Enabled Dependabot Security Updates"
             fi
 
-            # D. Secret Scanning & Push Protection (Public Repos Only)
+            # --- 3. Features for Public Repositories (or GHAS-enabled Private Repos) ---
             if [ "$is_private" = "false" ]; then
-              PAYLOAD=$(jq -n '{
+              # A. Enable Private Vulnerability Reporting (PVR)
+              if ! gh api "repos/$ORG_NAME/$repo/private-vulnerability-reporting" -X PUT > /dev/null 2>&1; then
+                PVR_PAYLOAD=$(jq -n '{private_vulnerability_reporting_enabled: true}')
+                if ! gh api "repos/$ORG_NAME/$repo" -X PATCH --input - <<< "$PVR_PAYLOAD" > /dev/null 2>&1; then
+                  echo "  ::warning::Failed to enable Private Vulnerability Reporting for $repo"
+                  REPO_FAILED=1
+                else
+                  echo "  ✓ Enabled Private Vulnerability Reporting"
+                fi
+              else
+                echo "  ✓ Enabled Private Vulnerability Reporting"
+              fi
+
+              # B. Enable CodeQL Default Setup (Extended query suite with default fallback)
+              CODEQL_PAYLOAD=$(jq -n '{state: "configured", query_suite: "extended"}')
+              if gh api "repos/$ORG_NAME/$repo/code-scanning/default-setup" -X PATCH --input - <<< "$CODEQL_PAYLOAD" > /dev/null 2>&1; then
+                echo "  ✓ Enabled CodeQL Default Setup (extended)"
+              else
+                CODEQL_FALLBACK=$(jq -n '{state: "configured", query_suite: "default"}')
+                if gh api "repos/$ORG_NAME/$repo/code-scanning/default-setup" -X PATCH --input - <<< "$CODEQL_FALLBACK" > /dev/null 2>&1; then
+                  echo "  ✓ Enabled CodeQL Default Setup (default)"
+                else
+                  echo "  ::warning::Failed to enable CodeQL Default Setup for $repo"
+                fi
+              fi
+
+              # C. Enable Secret Scanning & Push Protection
+              SECRET_PAYLOAD=$(jq -n '{
                 security_and_analysis: {
                   secret_scanning: { status: "enabled" },
                   secret_scanning_push_protection: { status: "enabled" }
                 }
               }')
-              if ! gh api "repos/$ORG_NAME/$repo" -X PATCH --input - <<< "$PAYLOAD" > /dev/null 2>&1; then
-                echo "::warning::Failed to enable Secret Scanning for public repo $repo"
+              if ! gh api "repos/$ORG_NAME/$repo" -X PATCH --input - <<< "$SECRET_PAYLOAD" > /dev/null 2>&1; then
+                echo "  ::warning::Failed to enable Secret Scanning for $repo"
                 REPO_FAILED=1
               else
-                echo "  ✓ Secret Scanning & Push Protection enabled"
+                echo "  ✓ Enabled Secret Scanning & Push Protection"
               fi
-            fi
-
-            # E. CodeQL Default Setup (Extended Query Suite for Code Scanning & Quality)
-            CODEQL_PAYLOAD=$(jq -n '{
-              state: "configured",
-              query_suite: "extended"
-            }')
-            if ! gh api "repos/$ORG_NAME/$repo/code-scanning/default-setup" -X PATCH --input - <<< "$CODEQL_PAYLOAD" > /dev/null 2>&1; then
-              echo "::warning::CodeQL Default Setup not applicable or failed for $repo"
             else
-              echo "  ✓ CodeQL Default Setup (extended suite) configured"
+              echo "  ℹ Skipping PVR, CodeQL, and Secret Scanning (Private repository without GHAS)"
             fi
 
             if [ "$REPO_FAILED" -eq 1 ]; then
@@ -102,7 +115,7 @@ jobs:
 
           echo ""
           if [ "$FAIL_COUNT" -gt 0 ]; then
-            echo "::error::Security configuration failed for $FAIL_COUNT repo(s): ${FAILED_REPOS[*]}"
+            echo "::error::Security configuration failed for $FAIL_COUNT repository/repositories: ${FAILED_REPOS[*]}"
             exit 1
           else
             echo "Successfully enforced security settings across all active repositories."
