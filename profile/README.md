@@ -1,12 +1,9 @@
-## 8fold
+# 8fold Software
 
-<!--
+## CommonMark for PHP extensions
 
-**Here are some ideas to get you started:**
+We have created the following packages to work with [CommonMark for PHP](https://commonmark.thephpleague.com).
 
-🙋‍♀️ A short introduction - what is your organization all about?
-🌈 Contribution guidelines - how can the community get involved?
-👩‍💻 Useful resources - where can the community find your docs? Is there anything else the community should know?
-🍿 Fun facts - what does your team eat for breakfast?
-🧙 Remember, you can do mighty things with the power of [Markdown](https://docs.github.com/github/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax)
--->
+- [Markdown Abbreviations (for CommonMark)](https://github.com/8fold/commonmark-abbreviations) which is both a markdown syntax and CommonMark extension for generating `<abbr>` elements in HTML from markdown using a human-readable syntax (`[.Long Text to Abbreviate](LTA)`).
+- [Accessible Heading Permalinks for CommonMark](https://github.com/8fold/commonmark-accessible-heading-permalinks) for building accessible heading permalinks based on the work of [Amber Wilson](https://amberwilson.co.uk/blog/are-your-anchor-links-accessible/)
+- 
