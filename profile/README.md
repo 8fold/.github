@@ -1,5 +1,14 @@
 # 8fold Software
 
+## XML Builder for PHP
+
+[XML Builder](https://github.com/8fold/php-xml-builder) is a library designed to generate XML strings, as opposed to ASTs or DOMs.
+
+It is the core library for:
+
+- [Syndication](https://github.com/8fold/php-syndication) (specifically the Atom and RSS feeds) and
+- [Sitemap](https://github.com/8fold/php-sitemap).
+
 ## CommonMark for PHP extensions
 
 The following libraries and packages to work with [CommonMark for PHP](https://commonmark.thephpleague.com).
