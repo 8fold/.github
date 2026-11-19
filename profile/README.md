@@ -1,5 +1,13 @@
 # 8fold Software
 
+## HTML Builder for PHP
+
+[HTML Builder](https://github.com/8fold/php-html-builder) is a library designed to generate HTML strings, as opposed to ASTs or DOMs.
+
+> I built and have used this library for years to eliminate DOM/AST memory overhead. Under PHP 8.5, its performance impact is practically invisible.
+>
+> ~ [Josh Bruce](https://github.com/joshbruce)
+
 ## XML Builder for PHP
 
 [XML Builder](https://github.com/8fold/php-xml-builder) is a library designed to generate XML strings, as opposed to ASTs or DOMs.
